@@ -1,0 +1,14 @@
+name: Pedes macOS runner check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 5
+    steps:
+      - name: Check standard macOS build runner
+        run: |
+          sw_vers
+          uname -m
