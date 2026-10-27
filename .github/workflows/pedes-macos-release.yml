@@ -1,0 +1,87 @@
+name: Onto Pedes macOS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Reviewed commit on the private Sesame main branch
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: onto-verified-macos
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: source
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      ELECTRON_INTERNAL_DISTRIBUTION: '1'
+      ELECTRON_SKIP_NOTARIZE: '1'
+      PEDES_RELEASE_VERIFY: full
+      HUSKY: '0'
+    steps:
+      - name: Validate pinned source revision
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 1
+      - uses: actions/checkout@v4
+        with:
+          repository: wangdidid/sesame_ts
+          ref: ${{ inputs.source_commit }}
+          path: source
+          ssh-key: ${{ secrets.SESAME_SOURCE_READ_KEY }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: source/go.sum
+      - name: Install dependencies and middleware
+        run: |
+          python -m pip install setuptools
+          npm ci --legacy-peer-deps --no-audit --no-fund
+          bash update.sh macos-latest arm
+      - name: Verify reviewed source
+        run: |
+          npm run typecheck
+          node scripts/test-pedes-identity.cjs
+          node scripts/test-pedes-work-transport.cjs
+          node scripts/test-pedes-group-cache.cjs
+          node scripts/test-pedes-placement.cjs
+          node scripts/test-identity-provider.cjs
+          node scripts/test-identity-recovery.cjs
+      - name: Build and sign Apple Silicon installers
+        run: |
+          npm run build:nmh
+          npm run dist:macarm:internal
+      - name: Verify installer, cached startup and live company workflows
+        run: npm run verify:release
+      - name: Stage verified installers without publishing an update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          shopt -s nullglob
+          gh release create "pi-build-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" \
+            --draft --target "$GITHUB_SHA" --title "Verified Pedes build ${GITHUB_RUN_ID}" \
+            --notes "Source commit: ${SOURCE_COMMIT}. Workflow commit: ${GITHUB_SHA}. Verify verification.json and updater hashes before publication." \
+            release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml \
+            release/verification.json release/login-*.png release/main-*.png release/work-*.png release/calendar-*.png
