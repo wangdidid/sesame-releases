@@ -68,6 +68,8 @@ jobs:
           node scripts/test-pedes-placement.cjs
           node scripts/test-identity-provider.cjs
           node scripts/test-identity-recovery.cjs
+          node scripts/test-personal-pedes-cache.cjs
+          node scripts/test-pedes-startup.cjs
       - name: Build and sign Apple Silicon installers
         run: |
           npm run build:nmh
